@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>マイ在庫管理プロ</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root { --primary: #007bff; --danger: #dc3545; --success: #28a745; --warning: #ffc107; --dark: #343a40; }
+        body { font-family: sans-serif; margin: 0; padding-bottom: 80px; background: #f4f7f6; color: #333; font-size: 14px; }
+        
+        .bottom-nav { position: fixed; bottom: 0; width: 100%; background: white; display: flex; border-top: 1px solid #ddd; z-index: 100; box-shadow: 0 -2px 10px rgba(0,0,0,0.1); }
+        .nav-item { flex: 1; padding: 15px 5px; text-align: center; font-size: 0.8rem; color: #666; border-top: 3px solid transparent; }
+        .nav-item.active { color: var(--primary); font-weight: bold; border-top-color: var(--primary); }
+
+        .page { display: none; padding: 15px; animation: fadeIn 0.2s; }
+        .page.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        .card { background: white; border-radius: 12px; padding: 15px; margin-bottom: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        .flex-row { display: flex; justify-content: space-between; align-items: center; }
+        .input-std { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; margin-bottom: 10px; font-size: 16px; } /* 16px以上でiPhoneのズームを防ぐ */
+        
+        .alert-box { background: #fff5f5; border: 1px solid #feb2b2; }
+        
+        button { border: none; border-radius: 8px; cursor: pointer; font-weight: bold; transition: 0.1s; }
+        button:active { transform: scale(0.95); opacity: 0.8; }
+        .btn-action { padding: 12px 5px; color: white; flex: 1; font-size: 0.9rem; }
+        .btn-use { background: var(--danger); }
+        .btn-in { background: var(--success); }
+        .btn-req { background: var(--warning); color: #333; }
+        .btn-main { background: var(--primary); color: white; width: 100%; padding: 15px; font-size: 1rem; }
+
+        #inventoryOverlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: white; z-index: 200; overflow-y: auto; display: none; }
+        .category-badge { font-size: 0.75rem; background: #eef2f7; padding: 3px 10px; border-radius: 12px; color: #555; }
+    </style>
+</head>
+<body>
+
+    <div id="page-stock" class="page active">
+        <div style="background:var(--dark); color:white; padding:15px; border-radius:12px; text-align:center; margin-bottom:15px;">
+            <small>在庫総資産</small><br>
+            <span style="font-size:1.6rem; font-weight:bold;">¥ <span id="totalMoneyDisplay">0</span></span>
+        </div>
+
+        <div style="display:flex; gap:8px; margin-bottom:15px;">
+            <input type="text" id="searchInput" class="input-std" style="flex:2; margin-bottom:0;" placeholder="🔍 検索..." oninput="render()">
+            <select id="catFilter" class="input-std" style="flex:1; margin-bottom:0;" onchange="render()"></select>
+        </div>
+
+        <div id="shortageArea"></div>
+        <div id="stockList"></div>
+    </div>
+
+    <div id="page-history" class="page">
+        <h3>活動履歴</h3>
+        <div id="historyList"></div>
+    </div>
+
+    <div id="page-chart" class="page">
+        <h3>月間使用トレンド</h3>
+        <canvas id="usageChart" width="400" height="300"></canvas>
+    </div>
+
+    <div id="page-manage" class="page">
+        <h3>管理・ツール</h3>
+        <button class="btn-main" style="background:#6f42c1; margin-bottom:20px;" onclick="openInventoryMode()">📦 棚卸しを開始する</button>
+
+        <div class="card">
+            <h4 style="margin:0 0 12px 0;">新規アイテム登録</h4>
+            <input type="text" id="newName" class="input-std" placeholder="商品名" list="list-names">
+            <div style="display:flex; gap:8px;">
+                <input type="text" id="newMaker" class="input-std" placeholder="メーカー" list="list-makers">
+                <input type="text" id="newModel" class="input-std" placeholder="型式" list="list-models">
+            </div>
+            <div style="display:flex; gap:8px;">
+                <input type="text" id="newCat" class="input-std" placeholder="カテゴリ" list="list-cats">
+                <input type="number" id="newPrice" class="input-std" placeholder="単価(¥)" inputmode="numeric">
+            </div>
+            <input type="number" id="newMin" class="input-std" placeholder="最低在庫通知ライン" inputmode="numeric">
+            <button class="btn-main" onclick="addItem()">マスターに追加</button>
+        </div>
+
+        <div class="card" style="background:#f0fff4; border:1px solid #c6f6d5;">
+            <h4 style="margin:0 0 10px 0;">データエクスポート</h4>
+            <button onclick="copyAllToExcel()" style="background:#2f855a; color:white; width:100%; padding:12px;">Excel一括コピー</button>
+        </div>
+
+        <h4>登録済みマスター</h4>
+        <div id="editList"></div>
+    </div>
+
+    <div id="inventoryOverlay">
+        <div style="padding:20px;">
+            <div class="flex-row">
+                <h2>実在庫の確認</h2>
+                <button onclick="closeInventoryMode()" style="background:#eee; padding:8px 15px;">戻る</button>
+            </div>
+            <div id="inventoryList"></div>
+            <button class="btn-main" style="background:var(--success); margin-top:20px;" onclick="finishInventory()">棚卸しを確定</button>
+        </div>
+    </div>
+
+    <datalist id="list-names"></datalist>
+    <datalist id="list-makers"></datalist>
+    <datalist id="list-models"></datalist>
+    <datalist id="list-cats"></datalist>
+
+    <nav class="bottom-nav">
+        <div class="nav-item active" onclick="showPage('stock')">在庫</div>
+        <div class="nav-item" onclick="showPage('history')">履歴</div>
+        <div class="nav-item" onclick="showPage('chart')">分析</div>
+        <div class="nav-item" onclick="showPage('manage')">管理</div>
+    </nav>
+
+<script>
+    let items = JSON.parse(localStorage.getItem('myStockV3_items')) || [];
+    let logs = JSON.parse(localStorage.getItem('myStockV3_logs')) || [];
+
+    function showPage(pageId) {
+        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+        document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+        document.getElementById('page-' + pageId).classList.add('active');
+        event.currentTarget.classList.add('active');
+        if(pageId === 'chart') updateChart();
+        render();
+    }
+
+    function save() {
+        localStorage.setItem('myStockV3_items', JSON.stringify(items));
+        localStorage.setItem('myStockV3_logs', JSON.stringify(logs));
+        render();
+    }
+
+    function addItem() {
+        const ids = ['newName', 'newMaker', 'newModel', 'newCat', 'newPrice', 'newMin'];
+        const [n, mk, md, c, p, mn] = ids.map(id => document.getElementById(id).value);
+        if(!n) return alert("名前は必須です");
+        items.push({ id: Date.now(), name: n, maker: mk||'-', model: md||'-', category: c||'未分類', price: parseInt(p)||0, minStock: parseInt(mn)||0, count: 0 });
+        ids.forEach(id => document.getElementById(id).value = '');
+        save();
+    }
+
+    function doAction(id, type, multiplier) {
+        const input = document.getElementById(`qty-${id}`);
+        const val = parseInt(input.value) || 1; // 未入力なら1
+        const item = items.find(i => i.id === id);
+        
+        if(type !== '依頼') item.count = Math.max(0, item.count + (val * multiplier));
+        
+        logs.unshift({
+            date: new Date().toLocaleString('ja-JP'),
+            month: new Date().toISOString().slice(0,7),
+            name: item.name,
+            type: type,
+            qty: val,
+            price: item.price
+        });
+        if(logs.length > 200) logs.pop();
+        input.value = '';
+        save();
+    }
+
+    function render() {
+        const search = document.getElementById('searchInput').value.toLowerCase();
+        const filter = document.getElementById('catFilter').value || 'all';
+        
+        // オートコンプリート更新
+        const updateDL = (id, key) => {
+            const vals = [...new Set(items.map(i => i[key]))].filter(v => v && v !== '-');
+            document.getElementById(id).innerHTML = vals.map(v => `<option value="${v}">`).join('');
+        };
+        ['list-names','list-makers','list-models','list-cats'].forEach((id,idx)=>updateDL(id,['name','maker','model','category'][idx]));
+
+        // カテゴリフィルタ更新
+        const cats = [...new Set(items.map(i => i.category))];
+        document.getElementById('catFilter').innerHTML = '<option value="all">全カテゴリ</option>' + cats.map(c => `<option value="${c}" ${filter===c?'selected':''}>${c}</option>`).join('');
+
+        // 総額
+        document.getElementById('totalMoneyDisplay').innerText = items.reduce((s, i) => s + (i.count * i.price), 0).toLocaleString();
+
+        // 在庫不足表示
+        const shorts = items.filter(i => i.count <= i.minStock);
+        document.getElementById('shortageArea').innerHTML = shorts.length ? `<div class="card alert-box"><div style="color:var(--danger);font-weight:bold;margin-bottom:5px;">⚠️ 要補充</div>${shorts.map(s => `<small>${s.name}</small>`).join(', ')}</div>` : '';
+
+        // リスト表示
+        const filtered = items.filter(i => {
+            const mS = i.name.toLowerCase().includes(search) || i.maker.toLowerCase().includes(search) || i.model.toLowerCase().includes(search);
+            const mC = filter === 'all' || i.category === filter;
+            return mS && mC;
+        });
+
+        document.getElementById('stockList').innerHTML = filtered.map(i => `
+            <div class="card ${i.count <= i.minStock ? 'alert-box' : ''}">
+                <div class="flex-row">
+                    <div style="flex:1;">
+                        <span class="category-badge">${i.category}</span>
+                        <div style="font-size:0.75rem; color:#888; margin:4px 0;">${i.maker} / ${i.model}</div>
+                        <strong style="font-size:1.1rem;">${i.name}</strong>
+                    </div>
+                    <div style="text-align:right;">
+                        <div style="font-size:1.6rem; font-weight:bold;">${i.count}</div>
+                        <div style="font-size:0.75rem; color:var(--primary);">¥${(i.count * i.price).toLocaleString()}</div>
+                    </div>
+                </div>
+                <div style="display:flex; gap:8px; margin-top:12px;">
+                    <input type="number" id="qty-${i.id}" class="input-std" style="flex:1; margin:0; text-align:center;" placeholder="1" inputmode="numeric">
+                    <button class="btn-action btn-use" onclick="doAction(${i.id}, '使用', -1)">使用</button>
+                    <button class="btn-action btn-in" onclick="doAction(${i.id}, '納入', 1)">納入</button>
+                    <button class="btn-action btn-req" onclick="doAction(${i.id}, '依頼', 0)">依頼</button>
+                </div>
+            </div>
+        `).join('');
+
+        document.getElementById('historyList').innerHTML = logs.map(l => `<div style="padding:10px; border-bottom:1px solid #eee; font-size:0.85rem;">${l.date.slice(5)} | <strong>${l.name}</strong> | ${l.type}(${l.qty})</div>`).join('');
+        document.getElementById('editList').innerHTML = items.map(i => `<div class="card flex-row"><span>${i.name}</span><button onclick="if(confirm('削除？')){items=items.filter(x=>x.id!=${i.id});save();}" style="color:red;">削除</button></div>`).join('');
+    }
+
+    // 棚卸し
+    function openInventoryMode() {
+        document.getElementById('inventoryOverlay').style.display = 'block';
+        document.getElementById('inventoryList').innerHTML = items.map(i => `
+            <div class="card flex-row">
+                <span><strong>${i.name}</strong><br><small>${i.model}</small></span>
+                <span>現物: <input type="number" id="inv-${i.id}" value="${i.count}" style="width:70px; padding:10px;" inputmode="numeric"></span>
+            </div>`).join('');
+    }
+    function closeInventoryMode() { document.getElementById('inventoryOverlay').style.display = 'none'; }
+    function finishInventory() {
+        items.forEach(i => {
+            const nV = parseInt(document.getElementById(`inv-${i.id}`).value) || 0;
+            if(i.count !== nV) {
+                logs.unshift({ date: new Date().toLocaleString('ja-JP'), month: new Date().toISOString().slice(0,7), name: i.name, type: '棚卸調整', qty: nV - i.count, price: i.price });
+                i.count = nV;
+            }
+        });
+        save(); closeInventoryMode(); alert("棚卸完了");
+    }
+
+    let chartObj;
+    function updateChart() {
+        const ctx = document.getElementById('usageChart').getContext('2d');
+        const mths = [...new Set(logs.map(l => l.month))].sort().slice(-6);
+        const data = mths.map(m => logs.filter(l => l.month === m && l.type === '使用').reduce((s, l) => s + l.qty, 0));
+        if(chartObj) chartObj.destroy();
+        chartObj = new Chart(ctx, { type: 'bar', data: { labels: mths, datasets: [{ label: '月間使用量', data: data, backgroundColor: '#007bff' }] } });
+    }
+
+    function copyAllToExcel() {
+        let t = "【現在在庫】\n商品名\tメーカー\t型式\tカテゴリ\t在庫数\t単価\t小計\n";
+        items.forEach(i => t += `${i.name}\t${i.maker}\t${i.model}\t${i.category}\t${i.count}\t${i.price}\t${i.count*i.price}\n`);
+        t += "\n【履歴】\n日時\t商品名\t種別\t数量\t金額\n";
+        logs.forEach(l => t += `${l.date}\t${l.name}\t${l.type}\t${l.qty}\t${l.qty*l.price}\n`);
+        navigator.clipboard.writeText(t).then(() => alert("一括コピー成功！"));
+    }
+
+    render();
+</script>
+</body>
+</html>
