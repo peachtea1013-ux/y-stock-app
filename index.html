@@ -2,13 +2,16 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>マイ在庫管理プロ</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root { --primary: #007bff; --danger: #dc3545; --success: #28a745; --warning: #ffc107; --dark: #343a40; }
         body { font-family: sans-serif; margin: 0; padding-bottom: 80px; background: #f4f7f6; color: #333; font-size: 14px; }
         
+        /* 認証前の画面を隠す */
+        #mainContent { display: none; }
+
         .bottom-nav { position: fixed; bottom: 0; width: 100%; background: white; display: flex; border-top: 1px solid #ddd; z-index: 100; box-shadow: 0 -2px 10px rgba(0,0,0,0.1); }
         .nav-item { flex: 1; padding: 15px 5px; text-align: center; font-size: 0.8rem; color: #666; border-top: 3px solid transparent; }
         .nav-item.active { color: var(--primary); font-weight: bold; border-top-color: var(--primary); }
@@ -19,10 +22,9 @@
 
         .card { background: white; border-radius: 12px; padding: 15px; margin-bottom: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
         .flex-row { display: flex; justify-content: space-between; align-items: center; }
-        .input-std { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; margin-bottom: 10px; font-size: 16px; } /* 16px以上でiPhoneのズームを防ぐ */
+        .input-std { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; margin-bottom: 10px; font-size: 16px; }
         
         .alert-box { background: #fff5f5; border: 1px solid #feb2b2; }
-        
         button { border: none; border-radius: 8px; cursor: pointer; font-weight: bold; transition: 0.1s; }
         button:active { transform: scale(0.95); opacity: 0.8; }
         .btn-action { padding: 12px 5px; color: white; flex: 1; font-size: 0.9rem; }
@@ -37,68 +39,75 @@
 </head>
 <body>
 
-    <div id="page-stock" class="page active">
-        <div style="background:var(--dark); color:white; padding:15px; border-radius:12px; text-align:center; margin-bottom:15px;">
-            <small>在庫総資産</small><br>
-            <span style="font-size:1.6rem; font-weight:bold;">¥ <span id="totalMoneyDisplay">0</span></span>
-        </div>
-
-        <div style="display:flex; gap:8px; margin-bottom:15px;">
-            <input type="text" id="searchInput" class="input-std" style="flex:2; margin-bottom:0;" placeholder="🔍 検索..." oninput="render()">
-            <select id="catFilter" class="input-std" style="flex:1; margin-bottom:0;" onchange="render()"></select>
-        </div>
-
-        <div id="shortageArea"></div>
-        <div id="stockList"></div>
-    </div>
-
-    <div id="page-history" class="page">
-        <h3>活動履歴</h3>
-        <div id="historyList"></div>
-    </div>
-
-    <div id="page-chart" class="page">
-        <h3>月間使用トレンド</h3>
-        <canvas id="usageChart" width="400" height="300"></canvas>
-    </div>
-
-    <div id="page-manage" class="page">
-        <h3>管理・ツール</h3>
-        <button class="btn-main" style="background:#6f42c1; margin-bottom:20px;" onclick="openInventoryMode()">📦 棚卸しを開始する</button>
-
-        <div class="card">
-            <h4 style="margin:0 0 12px 0;">新規アイテム登録</h4>
-            <input type="text" id="newName" class="input-std" placeholder="商品名" list="list-names">
-            <div style="display:flex; gap:8px;">
-                <input type="text" id="newMaker" class="input-std" placeholder="メーカー" list="list-makers">
-                <input type="text" id="newModel" class="input-std" placeholder="型式" list="list-models">
+    <div id="mainContent">
+        <div id="page-stock" class="page active">
+            <div style="background:var(--dark); color:white; padding:15px; border-radius:12px; text-align:center; margin-bottom:15px;">
+                <small>在庫総資産</small><br>
+                <span style="font-size:1.6rem; font-weight:bold;">¥ <span id="totalMoneyDisplay">0</span></span>
             </div>
-            <div style="display:flex; gap:8px;">
-                <input type="text" id="newCat" class="input-std" placeholder="カテゴリ" list="list-cats">
-                <input type="number" id="newPrice" class="input-std" placeholder="単価(¥)" inputmode="numeric">
+            <div style="display:flex; gap:8px; margin-bottom:15px;">
+                <input type="text" id="searchInput" class="input-std" style="flex:2; margin-bottom:0;" placeholder="🔍 検索..." oninput="render()">
+                <select id="catFilter" class="input-std" style="flex:1; margin-bottom:0;" onchange="render()"></select>
             </div>
-            <input type="number" id="newMin" class="input-std" placeholder="最低在庫通知ライン" inputmode="numeric">
-            <button class="btn-main" onclick="addItem()">マスターに追加</button>
+            <div id="shortageArea"></div>
+            <div id="stockList"></div>
         </div>
 
-        <div class="card" style="background:#f0fff4; border:1px solid #c6f6d5;">
-            <h4 style="margin:0 0 10px 0;">データエクスポート</h4>
-            <button onclick="copyAllToExcel()" style="background:#2f855a; color:white; width:100%; padding:12px;">Excel一括コピー</button>
+        <div id="page-history" class="page">
+            <h3>活動履歴</h3>
+            <div id="historyList"></div>
         </div>
 
-        <h4>登録済みマスター</h4>
-        <div id="editList"></div>
-    </div>
+        <div id="page-chart" class="page">
+            <h3>月間使用トレンド</h3>
+            <canvas id="usageChart" width="400" height="300"></canvas>
+        </div>
 
-    <div id="inventoryOverlay">
-        <div style="padding:20px;">
-            <div class="flex-row">
-                <h2>実在庫の確認</h2>
-                <button onclick="closeInventoryMode()" style="background:#eee; padding:8px 15px;">戻る</button>
+        <div id="page-manage" class="page">
+            <h3>管理・ツール</h3>
+            <button class="btn-main" style="background:#6f42c1; margin-bottom:20px;" onclick="openInventoryMode()">📦 棚卸しを開始する</button>
+
+            <div class="card">
+                <h4 style="margin:0 0 12px 0;">新規アイテム登録</h4>
+                <input type="text" id="newName" class="input-std" placeholder="商品名" list="list-names">
+                <div style="display:flex; gap:8px;">
+                    <input type="text" id="newMaker" class="input-std" placeholder="メーカー" list="list-makers">
+                    <input type="text" id="newModel" class="input-std" placeholder="型式" list="list-models">
+                </div>
+                <div style="display:flex; gap:8px;">
+                    <input type="text" id="newCat" class="input-std" placeholder="カテゴリ" list="list-cats">
+                    <input type="number" id="newPrice" class="input-std" placeholder="単価(¥)" inputmode="numeric">
+                </div>
+                <input type="number" id="newMin" class="input-std" placeholder="最低在庫通知ライン" inputmode="numeric">
+                <button class="btn-main" onclick="addItem()">マスターに追加</button>
             </div>
-            <div id="inventoryList"></div>
-            <button class="btn-main" style="background:var(--success); margin-top:20px;" onclick="finishInventory()">棚卸しを確定</button>
+
+            <div class="card" style="background:#f0fff4; border:1px solid #c6f6d5;">
+                <h4 style="margin:0 0 10px 0;">データエクスポート</h4>
+                <button onclick="copyAllToExcel()" style="background:#2f855a; color:white; width:100%; padding:12px;">Excel一括コピー</button>
+            </div>
+
+            <h4>登録済みマスター</h4>
+            <div id="editList"></div>
         </div>
+
+        <div id="inventoryOverlay">
+            <div style="padding:20px;">
+                <div class="flex-row">
+                    <h2>実在庫の確認</h2>
+                    <button onclick="closeInventoryMode()" style="background:#eee; padding:8px 15px;">戻る</button>
+                </div>
+                <div id="inventoryList"></div>
+                <button class="btn-main" style="background:var(--success); margin-top:20px;" onclick="finishInventory()">棚卸しを確定</button>
+            </div>
+        </div>
+
+        <nav class="bottom-nav">
+            <div class="nav-item active" onclick="showPage('stock')">在庫</div>
+            <div class="nav-item" onclick="showPage('history')">履歴</div>
+            <div class="nav-item" onclick="showPage('chart')">分析</div>
+            <div class="nav-item" onclick="showPage('manage')">管理</div>
+        </nav>
     </div>
 
     <datalist id="list-names"></datalist>
@@ -106,14 +115,25 @@
     <datalist id="list-models"></datalist>
     <datalist id="list-cats"></datalist>
 
-    <nav class="bottom-nav">
-        <div class="nav-item active" onclick="showPage('stock')">在庫</div>
-        <div class="nav-item" onclick="showPage('history')">履歴</div>
-        <div class="nav-item" onclick="showPage('chart')">分析</div>
-        <div class="nav-item" onclick="showPage('manage')">管理</div>
-    </nav>
-
 <script>
+    // --- 🔑 セキュリティ設定 ---
+    const APP_PASS = "1234"; // ★ここを好きなパスワードに変更してください
+
+    function checkAuth() {
+        const input = prompt("パスワードを入力してください");
+        if (input === APP_PASS) {
+            document.getElementById('mainContent').style.display = 'block';
+            render();
+        } else {
+            alert("パスワードが違います。アクセスを拒否しました。");
+            document.body.innerHTML = "<h2 style='text-align:center;margin-top:50px;'>認証が必要です。ページを再読み込みしてください。</h2>";
+        }
+    }
+
+    // 起動時に認証を実行
+    window.onload = checkAuth;
+
+    // --- 📦 在庫管理ロジック ---
     let items = JSON.parse(localStorage.getItem('myStockV3_items')) || [];
     let logs = JSON.parse(localStorage.getItem('myStockV3_logs')) || [];
 
@@ -143,19 +163,10 @@
 
     function doAction(id, type, multiplier) {
         const input = document.getElementById(`qty-${id}`);
-        const val = parseInt(input.value) || 1; // 未入力なら1
+        const val = parseInt(input.value) || 1;
         const item = items.find(i => i.id === id);
-        
         if(type !== '依頼') item.count = Math.max(0, item.count + (val * multiplier));
-        
-        logs.unshift({
-            date: new Date().toLocaleString('ja-JP'),
-            month: new Date().toISOString().slice(0,7),
-            name: item.name,
-            type: type,
-            qty: val,
-            price: item.price
-        });
+        logs.unshift({ date: new Date().toLocaleString('ja-JP'), month: new Date().toISOString().slice(0,7), name: item.name, type: type, qty: val, price: item.price });
         if(logs.length > 200) logs.pop();
         input.value = '';
         save();
@@ -165,25 +176,20 @@
         const search = document.getElementById('searchInput').value.toLowerCase();
         const filter = document.getElementById('catFilter').value || 'all';
         
-        // オートコンプリート更新
         const updateDL = (id, key) => {
             const vals = [...new Set(items.map(i => i[key]))].filter(v => v && v !== '-');
             document.getElementById(id).innerHTML = vals.map(v => `<option value="${v}">`).join('');
         };
         ['list-names','list-makers','list-models','list-cats'].forEach((id,idx)=>updateDL(id,['name','maker','model','category'][idx]));
 
-        // カテゴリフィルタ更新
         const cats = [...new Set(items.map(i => i.category))];
         document.getElementById('catFilter').innerHTML = '<option value="all">全カテゴリ</option>' + cats.map(c => `<option value="${c}" ${filter===c?'selected':''}>${c}</option>`).join('');
 
-        // 総額
         document.getElementById('totalMoneyDisplay').innerText = items.reduce((s, i) => s + (i.count * i.price), 0).toLocaleString();
 
-        // 在庫不足表示
         const shorts = items.filter(i => i.count <= i.minStock);
         document.getElementById('shortageArea').innerHTML = shorts.length ? `<div class="card alert-box"><div style="color:var(--danger);font-weight:bold;margin-bottom:5px;">⚠️ 要補充</div>${shorts.map(s => `<small>${s.name}</small>`).join(', ')}</div>` : '';
 
-        // リスト表示
         const filtered = items.filter(i => {
             const mS = i.name.toLowerCase().includes(search) || i.maker.toLowerCase().includes(search) || i.model.toLowerCase().includes(search);
             const mC = filter === 'all' || i.category === filter;
@@ -213,10 +219,9 @@
         `).join('');
 
         document.getElementById('historyList').innerHTML = logs.map(l => `<div style="padding:10px; border-bottom:1px solid #eee; font-size:0.85rem;">${l.date.slice(5)} | <strong>${l.name}</strong> | ${l.type}(${l.qty})</div>`).join('');
-        document.getElementById('editList').innerHTML = items.map(i => `<div class="card flex-row"><span>${i.name}</span><button onclick="if(confirm('削除？')){items=items.filter(x=>x.id!=${i.id});save();}" style="color:red;">削除</button></div>`).join('');
+        document.getElementById('editList').innerHTML = items.map(i => `<div class="card flex-row"><span>${i.name}</span><button onclick="if(confirm('削除？')){items=items.filter(x=>x.id!=${i.id});save();}" style="color:red; background:none;">削除</button></div>`).join('');
     }
 
-    // 棚卸し
     function openInventoryMode() {
         document.getElementById('inventoryOverlay').style.display = 'block';
         document.getElementById('inventoryList').innerHTML = items.map(i => `
@@ -253,8 +258,6 @@
         logs.forEach(l => t += `${l.date}\t${l.name}\t${l.type}\t${l.qty}\t${l.qty*l.price}\n`);
         navigator.clipboard.writeText(t).then(() => alert("一括コピー成功！"));
     }
-
-    render();
 </script>
 </body>
 </html>
